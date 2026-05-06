@@ -21,53 +21,46 @@ import MenuItem from "@mui/material/MenuItem"
 import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
 
 function DiaryList() {
-
     const [diaryList, setDiaryList] = useState<DiaryEntryType[]>([])
     const [filter, setFilter] = useState('')
     const [filterMood, setFilterMood] = useState(-1)
 
     useEffect(() => {
         loadEntries()
-    }, [user.email])
+    }, [user.email, filterMood])
 
     function loadEntries() {
-        if (filter) {
-            supabase.from('entries')
-                .select()
-                .textSearch('search_vector', filter, { type: 'websearch' })
-                .order('created_at', { ascending: false })
-                .limit(20)
-                .then(({ data, error }) => {
-                    processEntries(data, error)
-                })
-        } else {
-            supabase.from('entries')
-                .select()
-                .order('created_at', { ascending: false })
-                .limit(20)
-                .then(({ data, error }) => {
-                    processEntries(data, error)
-                })
+        let query = supabase.from('entries').select()
+
+        if (filter.trim()) {
+            query = query.textSearch('search_vector', filter, { type: 'websearch' })
         }
+
+        if (filterMood !== -1) {
+            query = query.eq('mood', filterMood)
+        }
+
+        query
+            .order('created_at', { ascending: false })
+            .limit(20)
+            .then(({ data, error }) => {
+                processEntries(data, error)
+            })
     }
 
-    function processEntries(data: { content: string | null; created_at: string | null; id: string; mood: number | null; star: number | null; title: string | null; user_id: string }[] | null, error: PostgrestError | null) {
-        console.log(data)
-        console.log(error)
+    function processEntries(data: any[] | null, error: PostgrestError | null) {
         if (!error && data) {
-            const entries = data.map(item => {
-                const entry = {
-                    id: item.id,
-                    date: item.created_at ? new Date(item.created_at) : new Date(),
-                    title: item.title ?? '',
-                    mood: item.mood ?? 1,
-                    content: item.content ?? '',
-                    star: item.star ?? 1,
-                }
-                return entry
-            })
+            const entries = data.map(item => ({
+                id: item.id,
+                date: item.created_at ? new Date(item.created_at) : new Date(),
+                title: item.title ?? '',
+                mood: item.mood ?? 0,
+                content: item.content ?? '',
+                star: item.star ?? 1,
+            }))
             setDiaryList(entries)
         } else {
+            console.error("Supabase error:", error)
             setDiaryList(sampleDiary)
         }
     }
@@ -83,78 +76,84 @@ function DiaryList() {
         }
     }
 
-    const moodListExtra = [{
-        mood: -1,
-        text: 'All',
-        icon: <AlternateEmailIcon sx={{ color: '#0099ff', fontSize: 'inherit' }} />,
-    }, ...moodList
+    const moodListExtra = [
+        {
+            mood: -1,
+            text: 'All',
+            icon: <AlternateEmailIcon sx={{ color: '#0099ff', fontSize: 'inherit' }} />,
+        }, 
+        ...moodList
     ]
 
     return (
-        <>
-            <FormControl>
-                <InputLabel id="mood-label">Mood</InputLabel>
-                <Select
-                    labelId="mood-label"
-                    id="mood-select"
-                    value={filterMood}
-                    label="Mood"
-                    onChange={(event) => {
-                        //entry.mood = event.target.value as number
-                        setFilterMood(event.target.value as number)
-                    }}
-                    sx={{
-                        mr: 0.5,
-                        mb: 1.5
-                    }}
-                >
-                    {moodListExtra.map((item, index) => (
-                        <MenuItem value={item.mood} key={index}>
-                            <Box component='span' sx={{ fontSize: '1.6em' }}>
-                                {moodListExtra[item.mood + 1].icon}
-                            </Box>
-                            <span style={{ paddingLeft: '0.7em' }}>{item.text}</span>
-                        </MenuItem>
-                    ))}
-                </Select>
-            </FormControl>
-            <TextField
-                id="filter"
-                label="Search"
-                variant="outlined"
-                size="small"
-                value={filter}
-                onChange={event => setFilter(event.target.value)}
-                onKeyDown={handleKeyDown}
-                sx={{
-                    mt: 1.5,
-                    mb: 0.5,
-                    mx: 1
-                }}
-            />
-            <Button variant="contained" onClick={() => search()} sx={{ mt: 1.7 }}>Search</Button>
+        <Box sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel id="mood-label">Mood</InputLabel>
+                    <Select
+                        labelId="mood-label"
+                        id="mood-select"
+                        value={filterMood}
+                        label="Mood"
+                        onChange={(event) => setFilterMood(event.target.value as number)}
+                    >
+                        {moodListExtra.map((item, index) => (
+                            <MenuItem value={item.mood} key={index}>
+                                <Box component='span' sx={{ fontSize: '1.2em', display: 'flex', alignItems: 'center' }}>
+                                    {item.icon}
+                                    <span style={{ paddingLeft: '0.7em' }}>{item.text}</span>
+                                </Box>
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <TextField
+                    id="filter"
+                    label="Search Content"
+                    variant="outlined"
+                    size="small"
+                    value={filter}
+                    onChange={event => setFilter(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    sx={{ flexGrow: 1, minWidth: '200px' }}
+                />
+                
+                <Button variant="contained" onClick={search}>
+                    Search
+                </Button>
+            </Box>
+
             {diaryList.map((entry, index) => (
-                <DiaryEntry entry={entry} id={index} key={index} />
+                <DiaryEntry entry={entry} id={index} key={entry.id || index} />
             ))}
-        </>
+        </Box>
     )
 }
 
 export function DiaryEntry(prop: { entry: DiaryEntryType, id: number, show?: boolean }) {
-
-    const { entry, id, show } = prop
-
+    const { entry, show } = prop
     const navigate = useNavigate()
-
     const [expand, setExpand] = useState(show)
+    const theme = useTheme()
 
     function handleEdit(): void {
-        navigate(`/diaryedit/${entry.id}`, {
-            state: entry
-        })
+        navigate(`/diaryedit/${entry.id}`, { state: entry })
     }
 
-    const theme = useTheme()
+    function processContent(text: string): string {
+        // 1. Bold "Samson"
+        const samRegex = /(Samson)/gi
+        let processedText = text.replaceAll(samRegex, `<strong>$1</strong>`)
+
+        // 2. Replace [lat, lng] with links
+        const geoRegex = /\[(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]/g
+        processedText = processedText.replace(geoRegex, (match, lat, lng) => {
+            return `<a href="/map/${lat},${lng}" style="color: ${theme.palette.primary.main}; text-decoration: underline; font-weight: bold;">${match}</a>`;
+        });
+
+        return processedText
+    }
 
     return (
         <Paper elevation={1} sx={{
@@ -163,48 +162,55 @@ export function DiaryEntry(prop: { entry: DiaryEntryType, id: number, show?: boo
             m: 1,
             backgroundColor: blue[theme.palette.mode === 'dark' ? 800 : 100],
         }}>
-
-            <Typography sx={{ fontSize: '48px' }}>
-                {moodList[entry.mood].icon}
+            <Typography sx={{ fontSize: '48px', display: 'flex', alignItems: 'center' }}>
+                {moodList[entry.mood]?.icon || '❓'}
             </Typography>
+            
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
                 flexGrow: 1,
-                pl: 1,
+                pl: 2,
             }}>
-                <Typography sx={{ textAlign: 'left' }}>
-                    {entry.date.toUTCString()}
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {entry.date.toDateString()}
                 </Typography>
-                <Typography onClick={() => setExpand(!expand)} >
-                    {entry.title}
+                <Typography 
+                    variant="h6" 
+                    onClick={() => setExpand(!expand)} 
+                    sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                    {entry.title || "Untitled Entry"}
                 </Typography>
                 {expand && (
-                    <Typography>
-                        <div dangerouslySetInnerHTML={{ __html: processContent(entry.content) }}></div>
+                    <Typography component="div" sx={{ mt: 1 }}>
+                        <div 
+                            onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.tagName === 'A') {
+                                    e.preventDefault();
+                                    const href = target.getAttribute('href');
+                                    if (href) navigate(href);
+                                }
+                            }}
+                            dangerouslySetInnerHTML={{ __html: processContent(entry.content) }}
+                        ></div>
                     </Typography>
                 )}
             </Box>
-            <Typography sx={{ fontSize: '24px', color: '#cc9d02' }}>
-                {"★".repeat(entry.star)}
-            </Typography>
-            <Tooltip title="Edit">
-                <IconButton aria-label="edit" onClick={handleEdit}>
-                    <EditIcon />
-                </IconButton>
-            </Tooltip>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <Typography sx={{ fontSize: '20px', color: '#cc9d02' }}>
+                    {"★".repeat(entry.star)}
+                </Typography>
+                <Tooltip title="Edit">
+                    <IconButton aria-label="edit" onClick={handleEdit}>
+                        <EditIcon />
+                    </IconButton>
+                </Tooltip>
+            </Box>
         </Paper>
     )
-
-    function processContent(text: string): string {
-        // make samson bold
-        const samRegex = /(Samson)/gi
-        text = text.replaceAll(samRegex, `<strong>$1</strong>`)
-
-        // replace [#,#] with something link to maps
-        return text
-    }
 }
 
-export default DiaryList
- 
+export default DiaryList;
